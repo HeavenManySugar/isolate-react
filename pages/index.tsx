@@ -18,9 +18,11 @@ interface IsolateConfig {
   stdin: string;
   stdout: string;
   stderr: string;
+  stderrToStdout: boolean;
   chdir: string;
   verbose: boolean;
   silent: boolean;
+  wait: boolean;
 
   // Limits
   memory: string;
@@ -30,7 +32,8 @@ interface IsolateConfig {
   stack: string;
   openFiles: string;
   fileSize: string;
-  quota: string;
+  quotaBlocks: string;
+  quotaInodes: string;
   coreSize: string;
   processes: string;
 
@@ -50,6 +53,9 @@ interface IsolateConfig {
   shareNet: boolean;
   inheritFds: boolean;
   specialFiles: boolean;
+  ttyHack: boolean;
+  asUid: string;
+  asGid: string;
 
   // Program
   program: string;
@@ -63,9 +69,11 @@ export default function Home() {
     stdin: "",
     stdout: "",
     stderr: "",
+    stderrToStdout: false,
     chdir: "",
     verbose: false,
     silent: false,
+    wait: false,
     memory: "",
     time: "",
     wallTime: "",
@@ -73,7 +81,8 @@ export default function Home() {
     stack: "",
     openFiles: "",
     fileSize: "",
-    quota: "",
+    quotaBlocks: "",
+    quotaInodes: "",
     coreSize: "",
     processes: "",
     envVars: [],
@@ -85,12 +94,64 @@ export default function Home() {
     shareNet: false,
     inheritFds: false,
     specialFiles: false,
+    ttyHack: false,
+    asUid: "",
+    asGid: "",
     program: "",
     arguments: "",
   });
 
   const [activeTab, setActiveTab] = useState("basic");
   const [generatedCommand, setGeneratedCommand] = useState("");
+  const [showHelp, setShowHelp] = useState<{ [key: string]: boolean }>({});
+
+  // 預設配置模板
+  const presetConfigs = {
+    basic: {
+      name: "基本配置",
+      description: "適合一般程式執行的基本配置",
+      config: {
+        boxId: "0",
+        memory: "262144",
+        time: "1",
+        wallTime: "2",
+        processes: "1",
+        program: "./program",
+        arguments: ""
+      }
+    },
+    competitive: {
+      name: "競程配置",
+      description: "適合競程題目的嚴格限制配置",
+      config: {
+        boxId: "0",
+        memory: "262144",
+        time: "1",
+        wallTime: "2",
+        stack: "8192",
+        openFiles: "16",
+        processes: "1",
+        program: "./solution",
+        stdin: "input.txt",
+        stdout: "output.txt",
+        stderr: "error.txt"
+      }
+    },
+    development: {
+      name: "開發測試",
+      description: "適合開發和測試的寬鬆配置",
+      config: {
+        boxId: "0",
+        memory: "1048576",
+        time: "10",
+        wallTime: "20",
+        verbose: true,
+        shareNet: true,
+        program: "./test",
+        arguments: ""
+      }
+    }
+  };
 
   const generateCommand = () => {
     let cmd = "isolate";
@@ -100,10 +161,12 @@ export default function Home() {
     if (config.metaFile) cmd += ` --meta=${config.metaFile}`;
     if (config.stdin) cmd += ` --stdin=${config.stdin}`;
     if (config.stdout) cmd += ` --stdout=${config.stdout}`;
-    if (config.stderr) cmd += ` --stderr=${config.stderr}`;
+    if (config.stderr && !config.stderrToStdout) cmd += ` --stderr=${config.stderr}`;
+    if (config.stderrToStdout) cmd += " --stderr-to-stdout";
     if (config.chdir) cmd += ` --chdir=${config.chdir}`;
     if (config.verbose) cmd += " --verbose";
     if (config.silent) cmd += " --silent";
+    if (config.wait) cmd += " --wait";
 
     // Limits
     if (config.memory) cmd += ` --mem=${config.memory}`;
@@ -113,7 +176,9 @@ export default function Home() {
     if (config.stack) cmd += ` --stack=${config.stack}`;
     if (config.openFiles) cmd += ` --open-files=${config.openFiles}`;
     if (config.fileSize) cmd += ` --fsize=${config.fileSize}`;
-    if (config.quota) cmd += ` --quota=${config.quota}`;
+    if (config.quotaBlocks && config.quotaInodes) {
+      cmd += ` --quota=${config.quotaBlocks},${config.quotaInodes}`;
+    }
     if (config.coreSize) cmd += ` --core=${config.coreSize}`;
     if (config.processes) cmd += ` --processes=${config.processes}`;
 
@@ -144,6 +209,9 @@ export default function Home() {
     if (config.shareNet) cmd += " --share-net";
     if (config.inheritFds) cmd += " --inherit-fds";
     if (config.specialFiles) cmd += " --special-files";
+    if (config.ttyHack) cmd += " --tty-hack";
+    if (config.asUid) cmd += ` --as-uid=${config.asUid}`;
+    if (config.asGid) cmd += ` --as-gid=${config.asGid}`;
 
     // Add run command
     cmd += " --run";
@@ -203,6 +271,49 @@ export default function Home() {
     }));
   };
 
+  const applyPreset = (presetKey: string) => {
+    const preset = presetConfigs[presetKey as keyof typeof presetConfigs];
+    if (preset) {
+      setConfig(prev => ({ ...prev, ...preset.config }));
+    }
+  };
+
+  const exportConfig = () => {
+    const configJson = JSON.stringify(config, null, 2);
+    const blob = new Blob([configJson], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'isolate-config.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importConfig = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const importedConfig = JSON.parse(e.target?.result as string);
+          setConfig(importedConfig);
+        } catch (error) {
+          alert('配置文件格式錯誤');
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const toggleHelp = (tabId: string) => {
+    setShowHelp(prev => ({
+      ...prev,
+      [tabId]: !prev[tabId]
+    }));
+  };
+
   const tabs = [
     { id: "basic", label: "基本選項" },
     { id: "limits", label: "資源限制" },
@@ -211,6 +322,7 @@ export default function Home() {
     { id: "control", label: "控制組" },
     { id: "special", label: "特殊選項" },
     { id: "program", label: "程式設定" },
+    { id: "presets", label: "配置管理" },
   ];
 
   return (
@@ -229,7 +341,7 @@ export default function Home() {
             </div>
             <div className="flex items-center space-x-4">
               <div className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
-                v1.0.0
+                v1.1.0
               </div>
             </div>
           </div>
@@ -249,8 +361,8 @@ export default function Home() {
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
                       className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id
-                          ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                          : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600"
+                        ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                        : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600"
                         }`}
                     >
                       {tab.label}
@@ -330,9 +442,15 @@ export default function Home() {
                           type="text"
                           value={config.stderr}
                           onChange={(e) => setConfig(prev => ({ ...prev, stderr: e.target.value }))}
-                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          disabled={config.stderrToStdout}
+                          className={`mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white ${config.stderrToStdout ? 'opacity-50 cursor-not-allowed' : ''}`}
                           placeholder="error.txt"
                         />
+                        {config.stderrToStdout && (
+                          <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                            已啟用 stderr-to-stdout，此欄位已停用
+                          </p>
+                        )}
                       </div>
 
                       <div>
@@ -373,6 +491,36 @@ export default function Home() {
                           靜音模式 (Silent)
                         </label>
                       </div>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={config.stderrToStdout}
+                          onChange={(e) => setConfig(prev => ({ ...prev, stderrToStdout: e.target.checked, stderr: e.target.checked ? "" : prev.stderr }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label className="ml-2 block text-sm text-gray-900 dark:text-white">
+                          重定向錯誤到標準輸出 (stderr-to-stdout)
+                        </label>
+                        <p className="ml-6 text-xs text-gray-500 dark:text-gray-400">
+                          將標準錯誤重定向到標準輸出，與 --stderr 互斥
+                        </p>
+                      </div>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={config.wait}
+                          onChange={(e) => setConfig(prev => ({ ...prev, wait: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label className="ml-2 block text-sm text-gray-900 dark:text-white">
+                          等待程式結束 (wait)
+                        </label>
+                        <p className="ml-6 text-xs text-gray-500 dark:text-gray-400">
+                          等待程式正常結束，不強制終止
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -392,6 +540,9 @@ export default function Home() {
                           className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                           placeholder="262144"
                         />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          程式可使用的最大記憶體 (KB)
+                        </p>
                       </div>
 
                       <div>
@@ -405,6 +556,9 @@ export default function Home() {
                           className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                           placeholder="1.5"
                         />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          程式 CPU 時間限制 (支援小數)
+                        </p>
                       </div>
 
                       <div>
@@ -470,6 +624,54 @@ export default function Home() {
                           className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                           placeholder="1024"
                         />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          磁碟配額 - 區塊數 (Quota Blocks)
+                        </label>
+                        <input
+                          type="text"
+                          value={config.quotaBlocks}
+                          onChange={(e) => setConfig(prev => ({ ...prev, quotaBlocks: e.target.value }))}
+                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          placeholder="1024"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          磁碟配額的區塊數限制 (與 inodes 一起使用)
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          磁碟配額 - Inodes 數 (Quota Inodes)
+                        </label>
+                        <input
+                          type="text"
+                          value={config.quotaInodes}
+                          onChange={(e) => setConfig(prev => ({ ...prev, quotaInodes: e.target.value }))}
+                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          placeholder="256"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          磁碟配額的 inode 數限制 (與 blocks 一起使用)
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Core 檔案大小限制 (KB)
+                        </label>
+                        <input
+                          type="text"
+                          value={config.coreSize}
+                          onChange={(e) => setConfig(prev => ({ ...prev, coreSize: e.target.value }))}
+                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          placeholder="0"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Core dump 檔案的大小限制
+                        </p>
                       </div>
 
                       <div>
@@ -706,6 +908,53 @@ export default function Home() {
                           不刪除特殊檔案 (裝置檔案等)
                         </p>
                       </div>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={config.ttyHack}
+                          onChange={(e) => setConfig(prev => ({ ...prev, ttyHack: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label className="ml-2 block text-sm text-gray-900 dark:text-white">
+                          TTY Hack
+                        </label>
+                        <p className="ml-4 text-xs text-gray-500 dark:text-gray-400">
+                          針對需要 TTY 的程式的特殊處理
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          執行用戶 UID
+                        </label>
+                        <input
+                          type="text"
+                          value={config.asUid}
+                          onChange={(e) => setConfig(prev => ({ ...prev, asUid: e.target.value }))}
+                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          placeholder="1000"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          指定程式執行的用戶 ID
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          執行群組 GID
+                        </label>
+                        <input
+                          type="text"
+                          value={config.asGid}
+                          onChange={(e) => setConfig(prev => ({ ...prev, asGid: e.target.value }))}
+                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          placeholder="1000"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          指定程式執行的群組 ID
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -743,6 +992,108 @@ export default function Home() {
                       />
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         傳遞給程式的參數
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "presets" && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">配置管理</h3>
+
+                    {/* 預設配置 */}
+                    <div className="space-y-4">
+                      <h4 className="text-md font-medium text-gray-900 dark:text-white">預設配置</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {Object.entries(presetConfigs).map(([key, preset]) => (
+                          <div key={key} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <h5 className="font-medium text-gray-900 dark:text-white mb-2">{preset.name}</h5>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{preset.description}</p>
+                            <button
+                              onClick={() => applyPreset(key)}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm font-medium"
+                            >
+                              套用配置
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 配置匯出匯入 */}
+                    <div className="space-y-4">
+                      <h4 className="text-md font-medium text-gray-900 dark:text-white">配置匯出/匯入</h4>
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        <button
+                          onClick={exportConfig}
+                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                        >
+                          匯出配置
+                        </button>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept=".json"
+                            onChange={importConfig}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          />
+                          <button className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md text-sm font-medium w-full">
+                            匯入配置
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        配置將以 JSON 格式儲存和載入
+                      </p>
+                    </div>
+
+                    {/* 重置配置 */}
+                    <div className="space-y-4">
+                      <h4 className="text-md font-medium text-gray-900 dark:text-white">重置配置</h4>
+                      <button
+                        onClick={() => setConfig({
+                          boxId: "0",
+                          metaFile: "",
+                          stdin: "",
+                          stdout: "",
+                          stderr: "",
+                          stderrToStdout: false,
+                          chdir: "",
+                          verbose: false,
+                          silent: false,
+                          wait: false,
+                          memory: "",
+                          time: "",
+                          wallTime: "",
+                          extraTime: "",
+                          stack: "",
+                          openFiles: "",
+                          fileSize: "",
+                          quotaBlocks: "",
+                          quotaInodes: "",
+                          coreSize: "",
+                          processes: "",
+                          envVars: [],
+                          fullEnv: false,
+                          directories: [],
+                          noDefaultDirs: false,
+                          enableCg: false,
+                          cgMem: "",
+                          shareNet: false,
+                          inheritFds: false,
+                          specialFiles: false,
+                          ttyHack: false,
+                          asUid: "",
+                          asGid: "",
+                          program: "",
+                          arguments: "",
+                        })}
+                        className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                      >
+                        重置所有配置
+                      </button>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        將所有配置恢復為預設值
                       </p>
                     </div>
                   </div>
