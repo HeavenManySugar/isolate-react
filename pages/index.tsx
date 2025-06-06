@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 
 const geistSans = Geist({
@@ -274,7 +274,45 @@ export default function Home() {
   const applyPreset = (presetKey: string) => {
     const preset = presetConfigs[presetKey as keyof typeof presetConfigs];
     if (preset) {
-      setConfig(prev => ({ ...prev, ...preset.config }));
+      // 先重置為預設的空配置，然後應用預設值
+      const defaultConfig: IsolateConfig = {
+        boxId: "0",
+        metaFile: "",
+        stdin: "",
+        stdout: "",
+        stderr: "",
+        stderrToStdout: false,
+        chdir: "",
+        verbose: false,
+        silent: false,
+        wait: false,
+        memory: "",
+        time: "",
+        wallTime: "",
+        extraTime: "",
+        stack: "",
+        openFiles: "",
+        fileSize: "",
+        quotaBlocks: "",
+        quotaInodes: "",
+        coreSize: "",
+        processes: "",
+        envVars: [],
+        fullEnv: false,
+        directories: [],
+        noDefaultDirs: false,
+        enableCg: false,
+        cgMem: "",
+        shareNet: false,
+        inheritFds: false,
+        specialFiles: false,
+        ttyHack: false,
+        asUid: "",
+        asGid: "",
+        program: "",
+        arguments: "",
+      };
+      setConfig({ ...defaultConfig, ...preset.config });
     }
   };
 
@@ -325,6 +363,11 @@ export default function Home() {
     { id: "presets", label: "配置管理" },
   ];
 
+  // 自動生成命令 - 當配置變更時
+  useEffect(() => {
+    generateCommand();
+  }, [config]); // 依賴 config，當 config 變更時自動重新生成命令
+
   return (
     <div className={`${geistSans.className} ${geistMono.className} min-h-screen bg-gray-50 dark:bg-gray-900`}>
       {/* Header */}
@@ -341,7 +384,7 @@ export default function Home() {
             </div>
             <div className="flex items-center space-x-4">
               <div className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
-                v1.1.0
+                v1.2.0
               </div>
             </div>
           </div>
@@ -1110,17 +1153,14 @@ export default function Home() {
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                     生成的命令
                   </h3>
-                  <button
-                    onClick={generateCommand}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                  >
-                    生成命令
-                  </button>
+                  <span className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-3 py-1 rounded-full text-sm font-medium">
+                    自動更新
+                  </span>
                 </div>
 
                 <div className="bg-gray-100 dark:bg-gray-900 rounded-lg p-4">
                   <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-all font-mono">
-                    {generatedCommand || "點擊 '生成命令' 按鈕來生成 isolate 命令"}
+                    {generatedCommand || "配置您的選項，命令將自動生成"}
                   </pre>
                 </div>
 
