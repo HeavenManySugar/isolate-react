@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 
 const geistSans = Geist({
@@ -103,7 +103,6 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState("basic");
   const [generatedCommand, setGeneratedCommand] = useState("");
-  const [showHelp, setShowHelp] = useState<{ [key: string]: boolean }>({});
 
   // 預設配置模板
   const presetConfigs = {
@@ -153,7 +152,7 @@ export default function Home() {
     }
   };
 
-  const generateCommand = () => {
+  const generateCommand = useCallback(() => {
     let cmd = "isolate";
 
     // Basic options
@@ -223,7 +222,7 @@ export default function Home() {
     }
 
     setGeneratedCommand(cmd);
-  };
+  }, [config]);
 
   const addEnvVar = () => {
     setConfig(prev => ({
@@ -337,19 +336,12 @@ export default function Home() {
         try {
           const importedConfig = JSON.parse(e.target?.result as string);
           setConfig(importedConfig);
-        } catch (error) {
+        } catch {
           alert('配置文件格式錯誤');
         }
       };
       reader.readAsText(file);
     }
-  };
-
-  const toggleHelp = (tabId: string) => {
-    setShowHelp(prev => ({
-      ...prev,
-      [tabId]: !prev[tabId]
-    }));
   };
 
   const tabs = [
@@ -366,7 +358,7 @@ export default function Home() {
   // 自動生成命令 - 當配置變更時
   useEffect(() => {
     generateCommand();
-  }, [config]); // 依賴 config，當 config 變更時自動重新生成命令
+  }, [config, generateCommand]); // 依賴 config 和 generateCommand，當配置變更時自動重新生成命令
 
   return (
     <div className={`${geistSans.className} ${geistMono.className} min-h-screen bg-gray-50 dark:bg-gray-900`}>
